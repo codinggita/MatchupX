@@ -195,10 +195,12 @@ router.post('/matches/:id/update', async (req, res) => {
       return res.status(400).json({ error: 'Event is required and must be a non-empty string' });
     }
 
+    // Calculate legal deliveries before adding the new ball
+    let legalDeliveries = match.ballByBall.filter(b => !['Wide', 'No Ball'].includes(b.event)).length;
     const ballCount = match.ballByBall.length;
-    const currentOver = Math.floor(ballCount / 6) + 1;
-    const currentBall = ballCount % 6 || (ballCount === 0 ? 0 : 6);
-    const overString = ballCount === 0 ? '1.0' : `${currentOver}.${currentBall}`;
+    const currentOver = Math.floor(legalDeliveries / 6) + 1; // Use legal deliveries for over count
+    const currentBall = legalDeliveries % 6; // Legal balls in current over
+    const overString = legalDeliveries === 0 ? '1.0' : `${currentOver}.${currentBall}`;
 
     let ballEvent = {
       over: currentOver,
@@ -222,8 +224,6 @@ router.post('/matches/:id/update', async (req, res) => {
     const nonStrikerPlayer = match.currentBatsmen.nonStriker;
     const bowlerPlayer = match.currentBowler;
 
-    let legalDeliveries = match.ballByBall.filter(b => !['Wide', 'No Ball'].includes(b.event)).length;
-
     if (!isNaN(parseInt(event))) { // Runs (1, 2, 3, 4, 6)
       const runs = parseInt(event);
       match.score[battingTeamKey].runs += runs;
@@ -246,7 +246,7 @@ router.post('/matches/:id/update', async (req, res) => {
         ];
       }
       legalDeliveries += 1;
-    } else if (event === 'Dot') { // Add this block for Dot Ball
+    } else if (event === 'Dot') { // Dot Ball
       match.score[battingTeamKey].overs += 1 / 6;
       match.currentPartnership.balls += 1;
 
@@ -310,8 +310,9 @@ router.post('/matches/:id/update', async (req, res) => {
       return res.status(400).json({ error: `Invalid event type: ${event}` });
     }
 
-    if (legalDeliveries % 6 === 0 && legalDeliveries > 0) {
-      match.currentBowler = null;
+    // Only reset bowler after 6 legal deliveries
+    if (legalDeliveries > 0 && legalDeliveries % 6 === 0) {
+      match.currentBowler = null; // Reset bowler only after a full over of legal deliveries
       [match.currentBatsmen.striker, match.currentBatsmen.nonStriker] = [
         match.currentBatsmen.nonStriker,
         match.currentBatsmen.striker,
@@ -319,7 +320,7 @@ router.post('/matches/:id/update', async (req, res) => {
     }
 
     const totalOvers = match.overs * 6;
-    if (match.score[battingTeamKey].overs >= totalOvers || match.score[battingTeamKey].wickets === battingTeam.players.length) {
+    if (legalDeliveries >= totalOvers || match.score[battingTeamKey].wickets === battingTeam.players.length) {
       match.status = 'completed';
       await match.save();
       req.io.emit('scoreUpdate', { ...match.toJSON(), status: 'completed' });
@@ -335,7 +336,6 @@ router.post('/matches/:id/update', async (req, res) => {
     res.status(500).json({ error: 'Server error: ' + err.message });
   }
 });
-
 // Undo last ball (updated to handle Dot)
 router.delete('/matches/:id/ball', async (req, res) => {
   console.log('DELETE /api/matches/:id/ball called with id:', req.params.id);

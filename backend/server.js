@@ -27,7 +27,7 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Added PATCH and OPTIONS
   credentials: true,
 }));
 
@@ -44,7 +44,7 @@ const io = new Server(server, {
         callback(new Error('Not allowed by CORS'));
       }
     },
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], // Optional alignment
     credentials: true,
   },
 });
@@ -63,9 +63,25 @@ app.get('/', (req, res) => {
 });
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB connected');
+    const HOST = '0.0.0.0';
+    const PORT = process.env.PORT || 5000;
+    server.listen(PORT, HOST, () => {
+      console.log(`Server running on ${HOST}:${PORT}`);
+    }).on('error', (err) => {
+      console.error('Server startup error:', err);
+      if (err.code === 'EADDRINUSE') {
+        console.log(`Port ${PORT} in use, trying ${PORT + 1}...`);
+        server.listen(PORT + 1, HOST);
+      }
+    });
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+  });
 
 // Socket.IO connection
 io.on('connection', (socket) => {
@@ -73,19 +89,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
-});
-
-// Start server with explicit host and port
-const HOST = '0.0.0.0';
-const PORT = process.env.PORT || 5000; // Render.com sets PORT, fallback to 5000 locally
-server.listen(PORT, HOST, () => {
-  console.log(`Server running on ${HOST}:${PORT}`);
-}).on('error', (err) => {
-  console.error('Server startup error:', err);
-  if (err.code === 'EADDRINUSE') {
-    console.log(`Port ${PORT} in use, trying ${PORT + 1}...`);
-    server.listen(PORT + 1, HOST);
-  }
 });
 
 module.exports = app;
